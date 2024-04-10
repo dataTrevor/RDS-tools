@@ -6,6 +6,11 @@ import os
 import boto3
 import time
 
+'''
+Author: king_516@126.com/Chuan Jin
+Date: 2024-04-10
+Function: a tool to configure the replication from Aurora3 to Aurora2, after blue/green deployment switchover.
+'''
 boto3.set_stream_logger(name='botocore.credentials', level=logging.INFO)
 # rds user settings of old blue
 source_rds_port = 3306
