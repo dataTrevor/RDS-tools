@@ -6,11 +6,6 @@ import os
 import boto3
 import time
 
-'''
-Author: king_516@126.com/Chuan Jin
-Date: 2024-04-10
-Function: a tool to configure the replication from Aurora3 to Aurora2, after blue/green deployment switchover.
-'''
 boto3.set_stream_logger(name='botocore.credentials', level=logging.INFO)
 # rds user settings of old blue
 source_rds_port = 3306
@@ -21,6 +16,7 @@ clusterId = os.environ['CLUSTER_ID']
 clusterRegion = os.environ['REGION']
 repl_user = os.environ['REPL_USER']
 repl_pass = os.environ['REPL_PASS']
+binlog_msg = os.environ['BINLOG_MSG']
 
 start_slave_sql = 'CALL mysql.rds_start_replication'
 logger = logging.getLogger()
@@ -158,7 +154,7 @@ def lambda_handler(event, context):
     if instanceWriterEvents is None or len(instanceWriterEvents) ==0:
         logging.error("No Events of instance %s found during Switchover, please check the Events from AWS RDS console" % eventInstanceId)
         return "No Events of instance %s found during Switchover" % eventInstanceId
-    binlogMsg = None
+    binlogMsg = binlog_msg if binlog_msg is not None else None
     # find binlog detail msg from events of new writer
     for i in range(len(instanceWriterEvents)):
         event = instanceWriterEvents[i]
@@ -211,4 +207,3 @@ def lambda_handler(event, context):
     conn.close()
     logger.info("SUCCESS: set rollback replication for RDS/Aurora MySQL %s succeeded" % clusterId)
     return "Added replication successfully for RDS/Aurora MySQL %s" % clusterId
-    
