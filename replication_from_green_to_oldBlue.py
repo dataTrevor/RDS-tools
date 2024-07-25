@@ -110,22 +110,30 @@ def MySQLSettingsJson(servername, port, username, password):
 # init the tableMappingJson for CDC task
 def initTableMappingJson():
     tableMappingJson = {}
-    allSchemaRule = {}
-    allSchemaRule['rule-type'] = "selection"
-    allSchemaRule['rule-id'] = "395145838"
-    allSchemaRule['rule-name'] = "lambda-create-395145838"
-    ruleObject = {
-            "schema-name": "%",
-            "table-name": "%"
-    }
-    allSchemaRule['object-locator'] = ruleObject
-    allSchemaRule['rule-action'] = "include"
-    allSchemaRule['filters'] = []
-    allSchemaRule['parallel-load'] = None
-    allSchemaRule['isAutoSegmentationChecked'] = False
-    rules = [allSchemaRule]
+    allSchemaRule = initTableSelRule("395145838", "lambda-create-395145838", "%", "%", "include")
+    mysqlExclueRule = initTableSelRule("395145839", "lambda-create-395145839", "mysql", "%", "exclude")
+    sysExclueRule = initTableSelRule("395145840", "lambda-create-395145840", "sys", "%", "exclude")
+    perfoExclueRule = initTableSelRule("395145841", "lambda-create-395145841", "performance_schema", "%", "exclude")
+    infoExclueRule = initTableSelRule("395145842", "lambda-create-395145842", "information_schema", "%", "exclude")
+
+    rules = [allSchemaRule,mysqlExclueRule,sysExclueRule,perfoExclueRule,infoExclueRule]
     tableMappingJson["rules"] = rules
     return tableMappingJson
+
+# init Table selection Rule
+def initTableSelRule(ruleId: str, ruleName: str, schema: str, tableName: str, ruleAction: str):
+    schemaRule = {}
+    schemaRule['rule-type'] = "selection"
+    schemaRule['rule-id'] = ruleId
+    schemaRule['rule-name'] = ruleName
+    ruleObject = {
+            "schema-name": schema,
+            "table-name": tableName
+    }
+    schemaRule['object-locator'] = ruleObject
+    schemaRule['rule-action'] = ruleAction
+    schemaRule['filters'] = []
+    return schemaRule
 
 # init task setting
 def initReplicationTaskSettings():
@@ -177,7 +185,7 @@ def checkDMSCDCtaskStat(taskArn, region) -> str:
         },
     ]
     )
-    if res == None or len(res['ReplicationTasks'] == 0):
+    if res == None or len(res['ReplicationTasks']) == 0:
         logger.warn("Task not found: %s", taskArn)
         return None
     else:
@@ -190,7 +198,7 @@ def checkDMSCDCtaskStat(taskArn, region) -> str:
             return status
 
 # valid cdc task init status equal to "Created"
-def DMStaskStatInCreated(taskArn, region):
+def DMStaskStatInCreated(taskArn, region) -> bool:
     client = getClient("dms", region)
     res = client.describe_replication_tasks(
     Filters=[
@@ -202,13 +210,13 @@ def DMStaskStatInCreated(taskArn, region):
         },
     ]
     )
-    if res == None or len(res['ReplicationTasks'] == 0):
+    if res == None or len(res['ReplicationTasks']) == 0:
         logger.warn("Task not found: %s", taskArn)
         return False
     else:
     # get first task status
         status = res['ReplicationTasks'][0]['Status']
-        # doing sth but not running replication
+        # creating or modifing
         if status == "creating" or status[-3:]=="ing":
             time.sleep(10)
             return DMStaskStatInCreated(taskArn, region)
@@ -315,8 +323,11 @@ def lambda_handler(event, context):
         event = instanceWriterEvents[i]
         if event['Message'].startswith('Binary log coordinates in green environment after switchover' ):
             # add filter to match SourceIdentifier of event with clusterId
-            instanceNameLike = ("%s-instance" % clusterId)
-            if event['SourceIdentifier'].startswith(instanceNameLike):
+            # strip "-cluster" from "aurora2-db-cluster"
+            clusterIdlike = clusterId[:-8] if (len(clusterId) > 8 and "-cluster" in clusterId) else clusterId
+            instanceNameLike = ("%s-instance" % clusterIdlike)
+            instanceNameLike2 = ("%s-green" % clusterIdlike)
+            if event['SourceIdentifier'].startswith(instanceNameLike) or event['SourceIdentifier'].startswith(instanceNameLike2):
                 binlogMsg = event['Message']
                 break
     if binlogMsg is None:
@@ -400,12 +411,12 @@ def lambda_handler(event, context):
                 # delete blue green
                 readOnly = deleteBlueGreenDeploymentAndConfirm(client, deploymentIdentifier, blueclusterEndpoint, user_name, password)
                 if readOnly == "ON":
-                    logger.error("Aurora2: %s can't write, pls check", blueDBClusterIdentifier)
+                    logger.error("Aurora2: %s can't write, pls check!!", blueDBClusterIdentifier)
                     return
                 # check cdc task's status is created
                 canStart = DMStaskStatInCreated(cdcArn, region)
                 if not canStart:
-                    logger.error("DMS replication task: %s for RDS/Aurora MySQL %s Created but not Started! Pls start it manually!" % (taskName, clusterId))
+                    logger.error("DMS replication task: %s for RDS/Aurora MySQL %s Created but not Started! Pls start it manually!!" % (taskName, clusterId))
                     return
                 # start cdc task
                 logger.info("Begin to start cdc task: %s", cdcArn)
@@ -421,9 +432,9 @@ def lambda_handler(event, context):
                     taskStatus = checkDMSCDCtaskStat(cdcArn, region)
                     logger.warn("Status of task %s is %s." % (taskName, taskStatus))
                     if taskStatus == "running":
-                        logger.info("SUCCESS: set DMS replication task: %s for RDS/Aurora MySQL %s succeeded" % (taskName, clusterId))
+                        logger.info("SUCCESS: set DMS replication task: %s for RDS/Aurora MySQL %s succeeded, task is running normally." % (taskName, clusterId))
                     else:
-                        logger.error("DMS replication task: %s for RDS/Aurora MySQL %s Created but not running" % (taskName, clusterId))
+                        logger.error("DMS replication task: %s for RDS/Aurora MySQL %s Created but not running!!! Pls check it!!!" % (taskName, clusterId))
             except Exception as e:
                 logger.error(e)
                 return
