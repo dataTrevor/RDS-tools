@@ -327,7 +327,8 @@ def lambda_handler(event, context):
             clusterIdlike = clusterId[:-8] if (len(clusterId) > 8 and "-cluster" in clusterId) else clusterId
             instanceNameLike = ("%s-instance" % clusterIdlike)
             instanceNameLike2 = ("%s-green" % clusterIdlike)
-            if event['SourceIdentifier'].startswith(instanceNameLike) or event['SourceIdentifier'].startswith(instanceNameLike2):
+            instanceNameLike3 = clusterIdlike
+            if event['SourceIdentifier'].startswith(instanceNameLike) or event['SourceIdentifier'].startswith(instanceNameLike2) or event['SourceIdentifier'].startswith(instanceNameLike3):
                 binlogMsg = event['Message']
                 break
     if binlogMsg is None:
